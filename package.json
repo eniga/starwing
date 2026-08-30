@@ -1,0 +1,16 @@
+{
+  "name": "starwing",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "STARWING — Rail Strike",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "^1.6.0",
+    "jsdom": "^29.1.1",
+    "vitest": "^1.6.0"
+  }
+}
