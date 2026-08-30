@@ -54,8 +54,9 @@ waitPlay((world) => {
   // one wrapped frame for the baseline, then hold Space ~1.5s
   setTimeout(() => {
     phase.n = 2;
-    gwin().dispatchEvent(new gwin().KeyboardEvent('keydown', { code: 'Space' }));
-    setTimeout(() => gwin().dispatchEvent(new gwin().KeyboardEvent('keyup', { code: 'Space' })), 1500);
+    const KW = gwin().KeyboardEvent;
+    gwin().dispatchEvent(new KW('keydown', { code: 'Space' }));
+    setTimeout(() => gwin().dispatchEvent(new KW('keyup', { code: 'Space' })), 1500);
     setTimeout(() => {
       const active = world.projectiles.playerPool.activeCount;
       const parented = world.projectiles.playerPool.items.filter(s => s.mesh.parent === world.scene).length;
