@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<title>STARWING — Rail Strike</title>
+<style>
+  :root {
+    --accent: #5fd7ff;
+    --accent2: #ffd35f;
+    --danger: #ff5f6b;
+    --ok: #6bff9e;
+    --panel: rgba(8, 16, 26, 0.72);
+    --line: rgba(120, 200, 255, 0.35);
+    --text: #d7ecff;
+    --font: "Segoe UI", "Helvetica Neue", system-ui, sans-serif;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%; overflow: hidden; background: #04070c;
+    color: var(--text); font-family: var(--font);
+    -webkit-user-select: none; user-select: none;
+    touch-action: none;
+  }
+  #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+
+  /* Persistent screen-space vignette + subtle scanline for the modern-arcade look */
+  #vignette {
+    position: fixed; inset: 0; pointer-events: none; z-index: 5;
+    background:
+      radial-gradient(ellipse at center, rgba(0,0,0,0) 55%, rgba(0,0,0,0.45) 100%),
+      repeating-linear-gradient(0deg, rgba(255,255,255,0.015) 0 1px, rgba(0,0,0,0) 1px 3px);
+  }
+  #damage-flash {
+    position: fixed; inset: 0; pointer-events: none; z-index: 6; opacity: 0;
+    background: radial-gradient(ellipse at center, rgba(255,40,60,0.0) 40%, rgba(255,30,50,0.55) 100%);
+    transition: opacity 90ms linear;
+  }
+
+  /* ---------- HUD ---------- */
+  #hud { position: fixed; inset: 0; pointer-events: none; z-index: 10; display: none; }
+  .hud-panel {
+    position: absolute; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 8px; padding: 8px 10px; backdrop-filter: blur(3px);
+    box-shadow: 0 0 12px rgba(95,215,255,0.12), inset 0 0 18px rgba(95,215,255,0.05);
+  }
+  .hud-label { font-size: 10px; letter-spacing: 2px; opacity: 0.7; text-transform: uppercase; }
+  .bar { position: relative; height: 10px; background: rgba(255,255,255,0.08); border-radius: 5px; overflow: hidden; border: 1px solid rgba(255,255,255,0.12); }
+  .bar > i { position: absolute; inset: 0; transform-origin: left; background: linear-gradient(90deg, var(--accent), #b8f3ff); box-shadow: 0 0 10px var(--accent); transition: width 80ms linear; }
+  #shield-bar > i { background: linear-gradient(90deg, #39c6ff, #baf3ff); }
+  #boost-bar > i { background: linear-gradient(90deg, #ffb347, #ffe9a8); box-shadow: 0 0 10px var(--accent2); }
+
+  #hud-shield { top: 14px; left: 14px; width: 220px; }
+  #hud-bombs { top: 14px; right: 14px; text-align: right; }
+  #hud-laser { top: 14px; left: 50%; transform: translateX(-50%); text-align: center; }
+  #hud-hits { bottom: 16px; left: 14px; }
+  #hud-boost { bottom: 16px; left: 14px; width: 220px; margin-top: 46px; }
+  #hud-radar { bottom: 16px; right: 14px; width: 148px; height: 148px; padding: 6px; }
+  #radar-canvas { width: 100%; height: 100%; display: block; border-radius: 6px; }
+  #hud-wingmen { top: 14px; left: 250px; display: flex; gap: 6px; }
+  .wingman-box { width: 46px; height: 46px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); display: flex; align-items: center; justify-content: center; position: relative; }
+  .wingman-box .icon { font-size: 22px; }
+  .wingman-box.dead { opacity: 0.35; filter: grayscale(1); }
+  .wingman-box.rescue { animation: pulse 0.6s infinite alternate; border-color: var(--danger); }
+  @keyframes pulse { from { box-shadow: 0 0 4px var(--danger); } to { box-shadow: 0 0 16px var(--danger); } }
+
+  #hud-boss { top: 60px; left: 50%; transform: translateX(-50%); width: min(620px, 70vw); display: none; }
+  #boss-bar > i { background: linear-gradient(90deg, #ff5f6b, #ffb0b6); box-shadow: 0 0 12px var(--danger); }
+
+  /* Reticle + charge ring + lock-on */
+  #reticle { position: fixed; left: 50%; top: 50%; transform: translate(-50%,-50%); width: 46px; height: 46px; z-index: 9; pointer-events: none; display: none; }
+  #reticle .ring { position: absolute; inset: 0; border: 1px solid rgba(120,220,255,0.5); border-radius: 50%; }
+  #reticle .dot { position: absolute; left: 50%; top: 50%; width: 3px; height: 3px; margin: -1.5px; background: var(--accent); border-radius: 50%; box-shadow: 0 0 6px var(--accent); }
+  #charge-ring { position: absolute; inset: -6px; border-radius: 50%; border: 2px solid transparent; border-top-color: var(--accent2); border-right-color: var(--accent2); transform: rotate(-90deg); opacity: 0; }
+  #lock-bracket { position: fixed; width: 34px; height: 34px; margin: -17px; z-index: 9; pointer-events: none; display: none; border: 2px solid var(--danger); border-radius: 6px; box-shadow: 0 0 10px rgba(255,95,107,0.6), inset 0 0 8px rgba(255,95,107,0.3); }
+  #lock-bracket::before, #lock-bracket::after { content:""; position:absolute; width:8px; height:8px; border:2px solid var(--danger); }
+  #lock-bracket::before { left:-2px; top:-2px; border-right:none; border-bottom:none; }
+  #lock-bracket::after { right:-2px; bottom:-2px; border-left:none; border-top:none; }
+
+  /* Radio chatter portrait box */
+  #radio { position: fixed; left: 14px; bottom: 92px; z-index: 11; width: 300px; display: none; pointer-events: none; }
+  #radio .box { display: flex; gap: 10px; background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 8px; padding: 10px; }
+  #radio .portrait { width: 44px; height: 44px; border-radius: 6px; flex: 0 0 auto; display:flex; align-items:center; justify-content:center; font-size: 26px; background: rgba(95,215,255,0.12); border:1px solid var(--line); }
+  #radio .name { font-size: 10px; letter-spacing: 2px; color: var(--accent); text-transform: uppercase; }
+  #radio .text { font-size: 13px; line-height: 1.35; margin-top: 2px; min-height: 18px; }
+  #radio .caret { display:inline-block; width:7px; height:13px; background:var(--accent); margin-left:2px; animation: blink 0.7s steps(1) infinite; vertical-align: -2px; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* ---------- Screens ---------- */
+  #screens { position: fixed; inset: 0; z-index: 20; display: none; }
+  .screen { position: absolute; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center; text-align: center; background: radial-gradient(ellipse at center, rgba(4,10,18,0.55), rgba(2,5,10,0.88)); padding: 24px; }
+  .screen.active { display: flex; }
+  .title-logo { font-size: clamp(48px, 12vw, 120px); font-weight: 800; letter-spacing: 0.18em; background: linear-gradient(180deg, #eafaff, #5fd7ff 55%, #1c6f9e); -webkit-background-clip: text; background-clip: text; color: transparent; filter: drop-shadow(0 0 24px rgba(95,215,255,0.45)); }
+  .title-sub { font-size: 14px; letter-spacing: 0.6em; color: var(--accent); margin-top: 6px; text-transform: uppercase; opacity: 0.85; }
+  .menu { margin-top: 42px; display: flex; flex-direction: column; gap: 10px; min-width: 280px; }
+  .menu-item { font-size: 18px; letter-spacing: 0.2em; text-transform: uppercase; padding: 10px 22px; border: 1px solid transparent; border-radius: 6px; cursor: pointer; color: var(--text); opacity: 0.75; transition: all 120ms; }
+  .menu-item:hover { opacity: 1; }
+  .menu-item.sel { opacity: 1; border-color: var(--line); background: rgba(95,215,255,0.1); box-shadow: 0 0 18px rgba(95,215,255,0.25); color: #fff; }
+  .menu-item.sel::before { content: "▸ "; color: var(--accent); }
+  .hint { margin-top: 34px; font-size: 12px; letter-spacing: 0.15em; opacity: 0.55; line-height: 1.9; }
+  .hint b { color: var(--accent); font-weight: 600; }
+  .briefing-card { max-width: 640px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 28px 34px; text-align: left; box-shadow: 0 0 40px rgba(95,215,255,0.15); }
+  .briefing-card h2 { font-size: 26px; letter-spacing: 0.12em; color: #fff; text-transform: uppercase; }
+  .briefing-card .loc { color: var(--accent); font-size: 12px; letter-spacing: 0.3em; text-transform: uppercase; margin-bottom: 12px; }
+  .briefing-card p { line-height: 1.7; margin-top: 14px; opacity: 0.85; }
+  .briefing-card .obj { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); font-size: 13px; }
+  .briefing-card .obj li { margin: 6px 0 6px 18px; }
+  .stat-row { display: flex; justify-content: space-between; width: 320px; margin: 6px 0; font-size: 15px; letter-spacing: 0.1em; }
+  .stat-row .v { color: var(--accent); }
+  .rank { font-size: 40px; font-weight: 800; letter-spacing: 0.2em; margin: 14px 0; }
+  .rank.ace { color: var(--accent2); text-shadow: 0 0 24px rgba(255,211,95,0.6); }
+  .rank.pilot { color: var(--accent); }
+  .rank.rookie { color: #9fb4c8; }
+
+  /* Pause / settings */
+  #pause-menu { position: relative; }
+  .settings-grid { display: grid; grid-template-columns: auto auto; gap: 10px 26px; align-items: center; margin-top: 22px; }
+  .settings-grid label { text-align: left; font-size: 13px; letter-spacing: 0.12em; text-transform: uppercase; opacity: 0.8; }
+  .seg { display: flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+  .seg button { background: transparent; border: none; color: var(--text); padding: 7px 14px; cursor: pointer; font-size: 12px; letter-spacing: 0.1em; opacity: 0.6; font-family: var(--font); }
+  .seg button.on { background: rgba(95,215,255,0.18); opacity: 1; color: #fff; }
+  .vol-row { display: flex; align-items: center; gap: 12px; }
+  input[type=range] { -webkit-appearance: none; appearance: none; width: 160px; height: 4px; background: rgba(255,255,255,0.15); border-radius: 2px; outline: none; }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--accent); cursor: pointer; }
+  input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border: none; border-radius: 50%; background: var(--accent); cursor: pointer; }
+  .bind-row { display: flex; justify-content: space-between; align-items: center; gap: 18px; }
+  .bind-key { min-width: 90px; text-align: center; border: 1px solid var(--line); border-radius: 5px; padding: 6px 10px; cursor: pointer; font-size: 12px; letter-spacing: 0.1em; background: rgba(255,255,255,0.04); }
+  .bind-key.listening { border-color: var(--accent2); color: var(--accent2); animation: pulse 0.5s infinite alternate; }
+  .section-title { grid-column: 1 / -1; font-size: 11px; letter-spacing: 0.3em; text-transform: uppercase; color: var(--accent); opacity: 0.8; margin-top: 10px; border-bottom: 1px solid var(--line); padding-bottom: 4px; }
+
+  /* Touch controls */
+  #touch { position: fixed; inset: 0; z-index: 15; display: none; pointer-events: none; }
+  #touch .stick-zone { position: absolute; left: 0; bottom: 0; width: 45%; height: 55%; pointer-events: auto; }
+  #touch .stick-base { position: absolute; width: 118px; height: 118px; border-radius: 50%; border: 2px solid rgba(120,200,255,0.4); background: rgba(20,40,60,0.3); display: none; }
+  #touch .stick-nub { position: absolute; width: 52px; height: 52px; border-radius: 50%; background: rgba(120,200,255,0.5); box-shadow: 0 0 12px rgba(120,200,255,0.5); display: none; }
+  .tbtn { position: absolute; pointer-events: auto; border-radius: 50%; border: 2px solid rgba(120,200,255,0.5); background: rgba(20,40,60,0.35); color: #cfeeff; display: flex; align-items: center; justify-content: center; font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; }
+  .tbtn:active { background: rgba(95,215,255,0.35); }
+  #t-fire { right: 26px; bottom: 40px; width: 84px; height: 84px; }
+  #t-boost { right: 122px; bottom: 26px; width: 64px; height: 64px; }
+  #t-bomb { right: 26px; bottom: 138px; width: 64px; height: 64px; }
+  #t-roll { right: 118px; bottom: 128px; width: 58px; height: 58px; }
+
+  /* Loading */
+  #loading { position: fixed; inset: 0; z-index: 40; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #04070c; transition: opacity 600ms; }
+  #loading.done { opacity: 0; pointer-events: none; }
+  #loading .logo { font-size: 44px; font-weight: 800; letter-spacing: 0.2em; color: var(--accent); text-shadow: 0 0 30px rgba(95,215,255,0.5); }
+  #loading .bar { width: 260px; height: 6px; margin-top: 22px; background: rgba(255,255,255,0.08); border-radius: 3px; overflow: hidden; }
+  #loading .bar > i { display: block; height: 100%; width: 0%; background: var(--accent); box-shadow: 0 0 12px var(--accent); transition: width 200ms; }
+  #loading .msg { margin-top: 14px; font-size: 12px; letter-spacing: 0.2em; opacity: 0.6; text-transform: uppercase; }
+</style>
+</head>
+<body>
+  <canvas id="game"></canvas>
+  <div id="vignette"></div>
+  <div id="damage-flash"></div>
+
+  <div id="hud">
+    <div class="hud-panel" id="hud-shield">
+      <div class="hud-label">Shield</div>
+      <div class="bar" id="shield-bar"><i style="width:100%"></i></div>
+      <div class="hud-label" id="shield-max" style="margin-top:4px; opacity:0.5">MAX 100</div>
+    </div>
+    <div class="hud-panel" id="hud-laser">
+      <div class="hud-label">Laser</div>
+      <div id="laser-pips" style="display:flex; gap:4px; margin-top:5px;"></div>
+    </div>
+    <div class="hud-panel" id="hud-bombs">
+      <div class="hud-label">Bombs</div>
+      <div id="bomb-pips" style="font-size:20px; margin-top:2px; letter-spacing:4px;"></div>
+    </div>
+    <div id="hud-wingmen"></div>
+    <div class="hud-panel" id="hud-boss">
+      <div class="hud-label" id="boss-name">BOSS</div>
+      <div class="bar" id="boss-bar"><i style="width:100%"></i></div>
+    </div>
+    <div class="hud-panel" id="hud-hits">
+      <div class="hud-label">Hits</div>
+      <div id="hit-count" style="font-size:26px; font-weight:700; color:#fff;">0</div>
+    </div>
+    <div class="hud-panel" id="hud-boost">
+      <div class="hud-label">Boost</div>
+      <div class="bar" id="boost-bar"><i style="width:100%"></i></div>
+    </div>
+    <div class="hud-panel" id="hud-radar"><canvas id="radar-canvas" width="136" height="136"></canvas></div>
+  </div>
+
+  <div id="reticle"><div class="ring"></div><div id="charge-ring"></div><div class="dot"></div></div>
+  <div id="lock-bracket"></div>
+  <div id="radio"><div class="box"><div class="portrait" id="radio-portrait">📡</div><div><div class="name" id="radio-name">COMMS</div><div class="text"><span id="radio-text"></span><span class="caret"></span></div></div></div></div>
+
+  <div id="touch">
+    <div class="stick-zone" id="stick-zone"><div class="stick-base" id="stick-base"></div><div class="stick-nub" id="stick-nub"></div></div>
+    <div class="tbtn" id="t-fire">Fire</div>
+    <div class="tbtn" id="t-boost">Boost</div>
+    <div class="tbtn" id="t-bomb">Bomb</div>
+    <div class="tbtn" id="t-roll">Roll</div>
+  </div>
+
+  <div id="screens"></div>
+
+  <div id="loading">
+    <div class="logo">STARWING</div>
+    <div class="bar"><i id="load-fill"></i></div>
+    <div class="msg" id="load-msg">Initializing</div>
+  </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "/vendor/three/build/three.module.js",
+      "three/addons/": "/vendor/three/examples/jsm/"
+    }
+  }
+  </script>
+  <script>
+    window.addEventListener('error', (e) => { console.log('UNCAUGHT_ERR:', e.message, '\nSTACK:', e.error && e.error.stack); });
+  </script>
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
